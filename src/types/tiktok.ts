@@ -1,0 +1,30 @@
+export type AccountStatus = 'Conectada' | 'Sem dados' | 'Erro';
+
+export type TikTokAccount = {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl?: string;
+  followers: number;
+  following: number;
+  totalLikes: number;
+  videoCount: number;
+  totalViews: number;
+  totalComments: number;
+  totalShares: number;
+  engagementRate: number;
+  status: AccountStatus;
+};
+
+export type TikTokVideo = {
+  id: string;
+  accountId: string;
+  title: string;
+  url: string;
+  postedAt: string;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  engagementRate: number;
+};
