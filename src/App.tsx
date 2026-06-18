@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MetricCard } from './components/MetricCard';
 import { AccountsTable } from './components/AccountsTable';
-import { VideosTable } from './components/VideosTable';
+import { AccountRankingTable } from './components/AccountRankingTable';
+import { DashboardCharts } from './components/DashboardCharts';
+import { TopVideosByEngagement } from './components/TopVideosByEngagement';
+import { VideoRankingTable } from './components/VideoRankingTable';
 import {
   disconnectTikTok,
   getTikTokDashboardData,
@@ -11,6 +14,7 @@ import {
   startTikTokLogin,
 } from './services/tiktokService';
 import type { TikTokAccount, TikTokVideo } from './types/tiktok';
+import { getDashboardMetrics } from './utils/dashboardMetrics';
 import { formatNumber } from './utils/format';
 import './styles.css';
 
@@ -72,17 +76,7 @@ export default function App() {
     boot();
   }, []);
 
-  const summary = useMemo(() => {
-    const totalFollowers = accounts.reduce((sum, item) => sum + item.followers, 0);
-    const totalViews = accounts.reduce((sum, item) => sum + item.totalViews, 0);
-    const avgEngagement = accounts.length
-      ? accounts.reduce((sum, item) => sum + item.engagementRate, 0) / accounts.length
-      : 0;
-    const bestAccount = [...accounts].sort((a, b) => b.totalViews - a.totalViews)[0];
-    const bestVideo = [...videos].sort((a, b) => b.views - a.views)[0];
-
-    return { totalFollowers, totalViews, avgEngagement, bestAccount, bestVideo };
-  }, [accounts, videos]);
+  const metrics = useMemo(() => getDashboardMetrics(accounts, videos), [accounts, videos]);
 
   function handleDisconnect() {
     disconnectTikTok();
@@ -120,28 +114,99 @@ export default function App() {
         </div>
       </header>
 
-      <section className="grid cards">
-        <MetricCard label="Contas" value={String(accounts.length)} />
-        <MetricCard label="Seguidores" value={formatNumber(summary.totalFollowers)} />
-        <MetricCard label="Views" value={formatNumber(summary.totalViews)} />
-        <MetricCard label="Engajamento médio" value={`${summary.avgEngagement.toFixed(1)}%`} />
+      <section className="dashboard-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Visão geral</p>
+            <h2>Métricas consolidadas</h2>
+          </div>
+          <p>Dados somados de todas as contas conectadas.</p>
+        </div>
+        <div className="grid metric-grid">
+          <MetricCard label="Contas conectadas" value={String(metrics.totals.accounts)} helper="perfis monitorados" />
+          <MetricCard label="Seguidores" value={formatNumber(metrics.totals.followers)} helper="audiência total" />
+          <MetricCard label="Views" value={formatNumber(metrics.totals.views)} helper="alcance analisado" />
+          <MetricCard label="Likes nos vídeos" value={formatNumber(metrics.totals.videoLikes)} helper="curtidas recebidas" />
+          <MetricCard label="Comentários" value={formatNumber(metrics.totals.comments)} helper="conversas geradas" />
+          <MetricCard label="Compartilhamentos" value={formatNumber(metrics.totals.shares)} helper="shares recebidos" />
+          <MetricCard label="Vídeos analisados" value={formatNumber(metrics.totals.videos)} helper="conteúdos carregados" />
+          <MetricCard label="Engajamento geral" value={`${metrics.averages.engagement.toFixed(2)}%`} helper="interações ÷ views" />
+          <MetricCard label="Média de views" value={formatNumber(metrics.averages.viewsPerVideo)} helper="por vídeo" />
+          <MetricCard label="Média de likes" value={formatNumber(metrics.averages.likesPerVideo)} helper="por vídeo" />
+          <MetricCard label="Média de comentários" value={formatNumber(metrics.averages.commentsPerVideo)} helper="por vídeo" />
+          <MetricCard label="Média de shares" value={formatNumber(metrics.averages.sharesPerVideo)} helper="por vídeo" />
+        </div>
       </section>
 
-      <section className="grid highlight-grid">
+      <section className="dashboard-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Destaques</p>
+            <h2>Melhores resultados</h2>
+          </div>
+          <p>Líderes entre as contas e vídeos carregados.</p>
+        </div>
+        <div className="grid highlight-grid">
         <div className="panel highlight">
-          <span className="muted">Melhor conta</span>
-          <strong>{summary.bestAccount?.username ?? '-'}</strong>
-          <p>{summary.bestAccount ? `${formatNumber(summary.bestAccount.totalViews)} views` : 'Sem dados'}</p>
+          <span className="muted">Melhor conta por views</span>
+          <strong>{metrics.highlights.bestAccountByViews?.displayName ?? '—'}</strong>
+          <p>{metrics.highlights.bestAccountByViews ? `${formatNumber(metrics.highlights.bestAccountByViews.totalViews)} views` : 'Sem dados'}</p>
         </div>
         <div className="panel highlight">
-          <span className="muted">Melhor vídeo</span>
-          <strong>{summary.bestVideo?.title ?? '-'}</strong>
-          <p>{summary.bestVideo ? `${formatNumber(summary.bestVideo.views)} views` : 'Sem dados'}</p>
+          <span className="muted">Melhor conta por engajamento</span>
+          <strong>{metrics.highlights.bestAccountByEngagement?.displayName ?? '—'}</strong>
+          <p>{metrics.highlights.bestAccountByEngagement ? `${metrics.highlights.bestAccountByEngagement.engagementRate.toFixed(2)}% de engajamento` : 'Sem dados'}</p>
+        </div>
+        <div className="panel highlight">
+          <span className="muted">Melhor vídeo por views</span>
+          <strong title={metrics.highlights.bestVideoByViews?.title}>{metrics.highlights.bestVideoByViews?.title ?? '—'}</strong>
+          <p>{metrics.highlights.bestVideoByViews ? `${formatNumber(metrics.highlights.bestVideoByViews.views)} views` : 'Sem dados'}</p>
+        </div>
+        <div className="panel highlight">
+          <span className="muted">Melhor vídeo por engajamento</span>
+          <strong title={metrics.highlights.bestVideoByEngagement?.title}>{metrics.highlights.bestVideoByEngagement?.title ?? '—'}</strong>
+          <p>{metrics.highlights.bestVideoByEngagement ? `${metrics.highlights.bestVideoByEngagement.engagementRate.toFixed(2)}% de engajamento` : 'Sem dados'}</p>
+        </div>
+        <div className="panel highlight">
+          <span className="muted">Conta com mais vídeos</span>
+          <strong>{metrics.highlights.accountWithMostVideos?.displayName ?? '—'}</strong>
+          <p>{metrics.highlights.accountWithMostVideos ? `${formatNumber(metrics.highlights.accountWithMostVideos.videoCount)} vídeos publicados` : 'Sem dados'}</p>
+        </div>
+        <div className="panel highlight">
+          <span className="muted">Conta com mais seguidores</span>
+          <strong>{metrics.highlights.accountWithMostFollowers?.displayName ?? '—'}</strong>
+          <p>{metrics.highlights.accountWithMostFollowers ? `${formatNumber(metrics.highlights.accountWithMostFollowers.followers)} seguidores` : 'Sem dados'}</p>
+        </div>
         </div>
       </section>
 
+      <DashboardCharts
+        accounts={accounts}
+        videosByViews={metrics.videosByViews}
+        videosByEngagement={metrics.videosByEngagement}
+      />
+
+      <section className="dashboard-section rankings-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Detalhamento</p>
+            <h2>Rankings completos</h2>
+          </div>
+          <p>Compare alcance, audiência e interações.</p>
+        </div>
+        <AccountRankingTable rankings={metrics.accountRankings} />
+        <VideoRankingTable videos={metrics.videosByViews} />
+        <TopVideosByEngagement videos={metrics.videosByEngagement} />
+      </section>
+
+      <div className="section-heading account-management-heading">
+        <div>
+          <p className="eyebrow">Configuração</p>
+          <h2>Contas conectadas</h2>
+        </div>
+        <p>Gerencie as contas salvas neste navegador.</p>
+      </div>
       <AccountsTable accounts={accounts} onDisconnect={handleDisconnectAccount} />
-      <VideosTable videos={videos} />
     </main>
   );
 }
