@@ -109,6 +109,43 @@ button.secondary {
   border: 1px solid rgba(148, 163, 184, 0.35);
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+button.danger {
+  color: #fca5a5;
+}
+
+.text-button {
+  background: transparent;
+  padding: 6px 0;
+}
+
+.account-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-cell img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.empty-state {
+  color: #a1a1aa;
+  text-align: center;
+  padding: 28px 10px;
+}
+
+td a {
+  color: #f8fafc;
+}
+
 .status-message {
   margin-top: 12px;
   color: #a7f3d0;

@@ -1,14 +1,11 @@
-import type { TikTokAccount, TikTokVideo } from '../types/tiktok';
+import type { TikTokVideo } from '../types/tiktok';
 import { formatNumber } from '../utils/format';
 
 type Props = {
   videos: TikTokVideo[];
-  accounts: TikTokAccount[];
 };
 
-export function VideosTable({ videos, accounts }: Props) {
-  const accountName = (id: string) => accounts.find((a) => a.id === id)?.username ?? '-';
-
+export function VideosTable({ videos }: Props) {
   return (
     <section className="panel">
       <h2>Vídeos em destaque</h2>
@@ -28,8 +25,8 @@ export function VideosTable({ videos, accounts }: Props) {
           <tbody>
             {videos.map((video) => (
               <tr key={video.id}>
-                <td>{video.title}</td>
-                <td>{accountName(video.accountId)}</td>
+                <td>{video.url ? <a href={video.url} target="_blank" rel="noreferrer">{video.title}</a> : video.title}</td>
+                <td>{video.accountName}</td>
                 <td>{formatNumber(video.views)}</td>
                 <td>{formatNumber(video.likes)}</td>
                 <td>{formatNumber(video.comments)}</td>
@@ -37,6 +34,9 @@ export function VideosTable({ videos, accounts }: Props) {
                 <td>{video.engagementRate.toFixed(1)}%</td>
               </tr>
             ))}
+            {videos.length === 0 && (
+              <tr><td className="empty-state" colSpan={7}>Nenhum vídeo encontrado.</td></tr>
+            )}
           </tbody>
         </table>
       </div>

@@ -4,21 +4,43 @@ const CLIENT_KEY = import.meta.env.VITE_TIKTOK_CLIENT_KEY;
 const CLIENT_SECRET = import.meta.env.VITE_TIKTOK_CLIENT_SECRET;
 const REDIRECT_URI = import.meta.env.VITE_TIKTOK_REDIRECT_URI;
 
-const TOKEN_STORAGE_KEY = 'tiktok_access_token';
-const REFRESH_TOKEN_STORAGE_KEY = 'tiktok_refresh_token';
+const ACCOUNTS_STORAGE_KEY = 'tiktok_connected_accounts';
+const LEGACY_TOKEN_STORAGE_KEY = 'tiktok_access_token';
+const LEGACY_REFRESH_TOKEN_STORAGE_KEY = 'tiktok_refresh_token';
 const OAUTH_STATE_STORAGE_KEY = 'tiktok_oauth_state';
 const CODE_VERIFIER_STORAGE_KEY = 'tiktok_code_verifier';
 
-function getAccessToken() {
-  return localStorage.getItem(TOKEN_STORAGE_KEY);
+export function getConnectedAccounts(): TikTokAccount[] {
+  try {
+    const savedAccounts = JSON.parse(localStorage.getItem(ACCOUNTS_STORAGE_KEY) ?? '[]');
+    return Array.isArray(savedAccounts) ? savedAccounts : [];
+  } catch {
+    return [];
+  }
 }
 
-function saveTokens(accessToken: string, refreshToken?: string) {
-  localStorage.setItem(TOKEN_STORAGE_KEY, accessToken);
+export function saveConnectedAccount(account: TikTokAccount) {
+  const accounts = getConnectedAccounts();
+  const existingIndex = accounts.findIndex((item) => item.id === account.id);
 
-  if (refreshToken) {
-    localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, refreshToken);
+  if (existingIndex >= 0) {
+    accounts[existingIndex] = account;
+  } else {
+    accounts.push(account);
   }
+
+  localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts));
+}
+
+export function removeConnectedAccount(accountId: string) {
+  const accounts = getConnectedAccounts().filter((account) => account.id !== accountId);
+  localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts));
+}
+
+export function clearConnectedAccounts() {
+  localStorage.removeItem(ACCOUNTS_STORAGE_KEY);
+  localStorage.removeItem(LEGACY_TOKEN_STORAGE_KEY);
+  localStorage.removeItem(LEGACY_REFRESH_TOKEN_STORAGE_KEY);
 }
 
 function base64UrlEncode(buffer: ArrayBuffer) {
@@ -41,12 +63,11 @@ async function createCodeChallenge(codeVerifier: string) {
 }
 
 export function isTikTokConnected() {
-  return Boolean(getAccessToken());
+  return getConnectedAccounts().length > 0 || Boolean(localStorage.getItem(LEGACY_TOKEN_STORAGE_KEY));
 }
 
 export function disconnectTikTok() {
-  localStorage.removeItem(TOKEN_STORAGE_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+  clearConnectedAccounts();
   localStorage.removeItem(OAUTH_STATE_STORAGE_KEY);
   localStorage.removeItem(CODE_VERIFIER_STORAGE_KEY);
 }
@@ -68,13 +89,12 @@ export async function startTikTokLogin() {
 
   params.set('client_key', CLIENT_KEY);
   params.set('response_type', 'code');
-  params.set('scope', 'user.info.basic,user.info.stats,video.list');
+  params.set('scope', 'user.info.basic,user.info.profile,user.info.stats,video.list');
   params.set('redirect_uri', REDIRECT_URI);
   params.set('state', state);
   params.set('code_challenge', codeChallenge);
   params.set('code_challenge_method', 'S256');
-
-  console.log('TikTok auth URL params:', params.toString());
+  params.set('prompt', 'login');
 
   window.location.href = `https://www.tiktok.com/v2/auth/authorize/?${params.toString()}`;
 }
@@ -83,7 +103,7 @@ export async function handleTikTokCallback(code: string, state: string | null) {
   const savedState = localStorage.getItem(OAUTH_STATE_STORAGE_KEY);
   const codeVerifier = localStorage.getItem(CODE_VERIFIER_STORAGE_KEY);
 
-  if (savedState && state !== savedState) {
+  if (!savedState || state !== savedState) {
     throw new Error('State inválido no callback do TikTok.');
   }
 
@@ -114,23 +134,20 @@ export async function handleTikTokCallback(code: string, state: string | null) {
     throw new Error(data.error_description || data.message || 'Erro ao trocar code por token.');
   }
 
-  saveTokens(data.access_token, data.refresh_token);
-
   localStorage.removeItem(OAUTH_STATE_STORAGE_KEY);
   localStorage.removeItem(CODE_VERIFIER_STORAGE_KEY);
+
+  const account = await fetchAccountWithToken(data.access_token, data.refresh_token);
+  saveConnectedAccount(account);
+
+  return account;
 }
 
-async function tiktokFetch<T>(url: string, options?: RequestInit): Promise<T> {
-  const token = getAccessToken();
-
-  if (!token) {
-    throw new Error('Conta TikTok não conectada.');
-  }
-
+async function tiktokFetch<T>(accessToken: string, url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...options,
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       ...(options?.headers ?? {}),
     },
@@ -145,7 +162,7 @@ async function tiktokFetch<T>(url: string, options?: RequestInit): Promise<T> {
   return data;
 }
 
-export async function getAccount(): Promise<TikTokAccount> {
+async function getAccountProfile(accessToken: string) {
   const fields = [
     'open_id',
     'union_id',
@@ -158,6 +175,7 @@ export async function getAccount(): Promise<TikTokAccount> {
   ].join(',');
 
   const data = await tiktokFetch<any>(
+    accessToken,
     `https://open.tiktokapis.com/v2/user/info/?fields=${fields}`
   );
 
@@ -176,11 +194,14 @@ export async function getAccount(): Promise<TikTokAccount> {
     totalComments: 0,
     totalShares: 0,
     engagementRate: 0,
-    status: 'Conectada',
   };
 }
 
-export async function getVideos(accountId: string): Promise<TikTokVideo[]> {
+export async function fetchVideosWithToken(
+  accessToken: string,
+  accountId: string,
+  accountName: string,
+): Promise<TikTokVideo[]> {
   const fields = [
     'id',
     'title',
@@ -195,6 +216,7 @@ export async function getVideos(accountId: string): Promise<TikTokVideo[]> {
   ].join(',');
 
   const data = await tiktokFetch<any>(
+    accessToken,
     `https://open.tiktokapis.com/v2/video/list/?fields=${fields}`,
     {
       method: 'POST',
@@ -213,6 +235,7 @@ export async function getVideos(accountId: string): Promise<TikTokVideo[]> {
     return {
       id: video.id,
       accountId,
+      accountName,
       title: video.title || video.video_description || 'Sem título',
       url: video.share_url || video.embed_link || '',
       postedAt: video.create_time
@@ -228,16 +251,19 @@ export async function getVideos(accountId: string): Promise<TikTokVideo[]> {
   });
 }
 
-export async function getTikTokDashboardData() {
-  const account = await getAccount();
-  const videos = await getVideos(account.id);
+export async function fetchAccountWithToken(
+  accessToken: string,
+  refreshToken?: string,
+): Promise<TikTokAccount> {
+  const account = await getAccountProfile(accessToken);
+  const videos = await fetchVideosWithToken(accessToken, account.id, account.displayName);
 
   const totalViews = videos.reduce((sum, video) => sum + video.views, 0);
   const totalComments = videos.reduce((sum, video) => sum + video.comments, 0);
   const totalShares = videos.reduce((sum, video) => sum + video.shares, 0);
   const totalVideoLikes = videos.reduce((sum, video) => sum + video.likes, 0);
 
-  const accountWithVideoMetrics: TikTokAccount = {
+  return {
     ...account,
     totalViews,
     totalComments,
@@ -246,10 +272,49 @@ export async function getTikTokDashboardData() {
       totalViews > 0
         ? ((totalVideoLikes + totalComments + totalShares) / totalViews) * 100
         : 0,
+    status: 'Conectada',
+    accessToken,
+    refreshToken,
+    videos,
   };
+}
+
+async function migrateLegacyAccount() {
+  if (getConnectedAccounts().length > 0) return;
+
+  const accessToken = localStorage.getItem(LEGACY_TOKEN_STORAGE_KEY);
+  if (!accessToken) return;
+
+  const refreshToken = localStorage.getItem(LEGACY_REFRESH_TOKEN_STORAGE_KEY) ?? undefined;
+  const account = await fetchAccountWithToken(accessToken, refreshToken);
+  saveConnectedAccount(account);
+  localStorage.removeItem(LEGACY_TOKEN_STORAGE_KEY);
+  localStorage.removeItem(LEGACY_REFRESH_TOKEN_STORAGE_KEY);
+}
+
+export async function getTikTokDashboardData(refresh = false) {
+  await migrateLegacyAccount();
+  let accounts = getConnectedAccounts();
+
+  if (refresh) {
+    accounts = await Promise.all(
+      accounts.map(async (account) => {
+        try {
+          const updatedAccount = await fetchAccountWithToken(
+            account.accessToken,
+            account.refreshToken,
+          );
+          saveConnectedAccount(updatedAccount);
+          return updatedAccount;
+        } catch {
+          return { ...account, status: 'Erro' as const };
+        }
+      }),
+    );
+  }
 
   return {
-    accounts: [accountWithVideoMetrics],
-    videos,
+    accounts,
+    videos: accounts.flatMap((account) => account.videos ?? []),
   };
 }
