@@ -7,6 +7,7 @@ import {
   getTikTokDashboardData,
   handleTikTokCallback,
   isTikTokConnected,
+  removeConnectedAccount,
   startTikTokLogin,
 } from './services/tiktokService';
 import type { TikTokAccount, TikTokVideo } from './types/tiktok';
@@ -20,16 +21,20 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('Conecte sua conta TikTok para buscar dados reais.');
 
-  async function loadTikTokData() {
+  async function loadTikTokData(refresh = true) {
     setLoading(true);
     setMessage('Buscando dados no TikTok...');
 
     try {
-      const data = await getTikTokDashboardData();
+      const data = await getTikTokDashboardData(refresh);
       setAccounts(data.accounts);
       setVideos(data.videos);
-      setConnected(true);
-      setMessage('Dados carregados com sucesso.');
+      setConnected(data.accounts.length > 0);
+      setMessage(
+        data.accounts.some((account) => account.status === 'Erro')
+          ? 'Algumas contas não puderam ser atualizadas. Exibindo os últimos dados salvos.'
+          : 'Dados carregados com sucesso.',
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Erro ao carregar dados.');
     } finally {
@@ -50,7 +55,7 @@ export default function App() {
           await handleTikTokCallback(code, state);
           window.history.replaceState({}, document.title, '/');
           setConnected(true);
-          await loadTikTokData();
+          await loadTikTokData(false);
         } catch (error) {
           setMessage(error instanceof Error ? error.message : 'Erro no callback do TikTok.');
         } finally {
@@ -60,7 +65,7 @@ export default function App() {
       }
 
       if (isTikTokConnected()) {
-        await loadTikTokData();
+        await loadTikTokData(false);
       }
     }
 
@@ -87,6 +92,15 @@ export default function App() {
     setMessage('Conta desconectada.');
   }
 
+  function handleDisconnectAccount(accountId: string) {
+    removeConnectedAccount(accountId);
+    const remainingAccounts = accounts.filter((account) => account.id !== accountId);
+    setAccounts(remainingAccounts);
+    setVideos(remainingAccounts.flatMap((account) => account.videos ?? []));
+    setConnected(remainingAccounts.length > 0);
+    setMessage('Conta desconectada. As demais contas foram mantidas.');
+  }
+
   return (
     <main className="app">
       <header className="hero">
@@ -98,9 +112,11 @@ export default function App() {
         </div>
 
         <div className="actions">
-          {!connected && <button onClick={startTikTokLogin}>Conectar TikTok</button>}
-          {connected && <button onClick={loadTikTokData} disabled={loading}>Atualizar dados</button>}
-          {connected && <button className="secondary" onClick={handleDisconnect}>Desconectar</button>}
+          <button onClick={startTikTokLogin} disabled={loading}>
+            {connected ? '+ Conectar nova conta' : 'Conectar TikTok'}
+          </button>
+          {connected && <button className="secondary" onClick={() => loadTikTokData(true)} disabled={loading}>Atualizar dados</button>}
+          {connected && <button className="secondary" onClick={handleDisconnect}>Desconectar tudo</button>}
         </div>
       </header>
 
@@ -124,8 +140,8 @@ export default function App() {
         </div>
       </section>
 
-      <AccountsTable accounts={accounts} />
-      <VideosTable videos={videos} accounts={accounts} />
+      <AccountsTable accounts={accounts} onDisconnect={handleDisconnectAccount} />
+      <VideosTable videos={videos} />
     </main>
   );
 }

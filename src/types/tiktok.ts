@@ -14,11 +14,15 @@ export type TikTokAccount = {
   totalShares: number;
   engagementRate: number;
   status: AccountStatus;
+  accessToken: string;
+  refreshToken?: string;
+  videos: TikTokVideo[];
 };
 
 export type TikTokVideo = {
   id: string;
   accountId: string;
+  accountName: string;
   title: string;
   url: string;
   postedAt: string;
